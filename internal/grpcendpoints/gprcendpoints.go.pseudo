@@ -1,0 +1,27 @@
+package grpcendpoints
+
+import (
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+// JUST PSEUDO CODE
+// it doesn't work
+
+func MaaAttest(controller *endpointcontroller.EndpointController, in *pb.MaaAttestRequest) (*pb.MaaAttestReply, error) {
+	inputData := endpointcontroller.MAAAttestInput{
+		MAAEndpoint: in.GetMAAEndpoint(),
+		RuntimeData: in.GetRuntimeData()
+	}
+
+	maaToken, status, err := controller.MAAAttest(inputData)
+
+	if err != nil {
+		nil, status.Errorf(convertStatusCode(status), "%s", err)
+	}
+
+	return &pb.MaaAttestReply{Token: maaToken.Token}, nil
+}
+
+func convertStatusCode(...) {...}

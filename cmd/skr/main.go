@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/Microsoft/confidential-sidecar-containers/internal/endpointcontroller"
 	"github.com/Microsoft/confidential-sidecar-containers/internal/httpginendpoints"
 	"github.com/Microsoft/confidential-sidecar-containers/pkg/attest"
 	"github.com/Microsoft/confidential-sidecar-containers/pkg/common"
@@ -140,6 +141,12 @@ func setupServer(certState *attest.CertState, identity *common.Identity, uvmInfo
 
 	server := gin.Default()
 	server.Use(httpginendpoints.RegisterGlobalStates(certState, identity, uvmInfo))
+	controllers := endpointcontroller.EndpointController{
+		CertState:      *certState,
+		Identity:       *identity,
+		UvmInformation: *uvmInfo,
+	}
+	server.Use(httpginendpoints.RegisterEndpointController(&controllers))
 	server.GET("/status", httpginendpoints.GetStatus)
 	server.POST("/attest/raw", httpginendpoints.PostRawAttest)
 	server.POST("/attest/maa", httpginendpoints.PostMAAAttest)
