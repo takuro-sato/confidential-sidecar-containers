@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package maa_attest;
+
+service MaaAttestService {
+  rpc MaaAttest (MaaAttestRequest) returns (MaaAttestReply) {}
+}
+
+message MaaAttestRequest {
+  string maa_endpoint = 1;
+  string runtime_data = 2;
+}
+
+message MaaAttestReply {
+  string token = 1;
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/Microsoft/confidential-sidecar-containers/internal/endpointcontroller"
 	"github.com/Microsoft/confidential-sidecar-containers/pkg/attest"
 	"github.com/Microsoft/confidential-sidecar-containers/pkg/common"
 	"github.com/Microsoft/confidential-sidecar-containers/pkg/skr"
@@ -14,14 +15,6 @@ import (
 )
 
 var ready bool
-
-type MAAAttestData struct {
-	// MAA endpoint which authors the MAA token
-	MAAEndpoint string `json:"maa_endpoint" binding:"required"`
-	// Base64 encoded representation of runtime data to be encoded
-	// as runtime claim in the MAA token
-	RuntimeData string `json:"runtime_data" binding:"required"`
-}
 
 type RawAttestData struct {
 	// Base64 encoded representation of runtime data whose hash digest
@@ -105,49 +98,27 @@ func PostRawAttest(c *gin.Context) {
 //   - MAAEndpoint is the uri to the Microsoft Azure Attestation service endpoint which
 //     will author and sign the attestation token
 func PostMAAAttest(c *gin.Context) {
-	var attestData MAAAttestData
+	var inputData endpointcontroller.MAAAttestInput
 
 	// call BindJSON to bind the received JSON to AttestData
-	if err := c.ShouldBindJSON(&attestData); err != nil {
+	if err := c.ShouldBindJSON(&inputData); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": errors.Wrapf(err, "invalid request format").Error()})
 		return
 	}
 
-	// base64 decode the incoming runtime data
-	runtimeDataBytes, err := base64.StdEncoding.DecodeString(attestData.RuntimeData)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": errors.Wrapf(err, "decoding base64-encoded runtime data of request failed").Error()})
-		return
-	}
-
-	maa := attest.MAA{
-		Endpoint:   attestData.MAAEndpoint,
-		TEEType:    "SevSnpVM",
-		APIVersion: "api-version=2020-10-01",
-	}
-
-	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
-	}
-
-	certState, ok := c.MustGet("certState").(*attest.CertState)
+	controller, ok := c.MustGet("endpointController").(*endpointcontroller.EndpointController)
 	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": errors.New("serverCertState is not set")})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errors.New("server is not setup properly")})
 		return
 	}
 
-	uvmInfo, ok := c.MustGet("uvmInfo").(*common.UvmInformation)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": errors.New("uvmInfo is not set")})
-		return
-	}
+	maaToken, status, err := controller.MAAAttest(inputData)
 
-	maaToken, err := certState.Attest(maa, runtimeDataBytes, *uvmInfo)
 	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		c.JSON(convertStatusCode(status), gin.H{"error": err.Error()})
 	}
 
-	c.JSON(http.StatusOK, gin.H{"token": maaToken})
+	c.JSON(convertStatusCode(status), maaToken)
 }
 
 // PostKeyRelease retrieves a secret previously imported to Azure Key Vault
@@ -225,6 +196,26 @@ func RegisterGlobalStates(certState *attest.CertState, identity *common.Identity
 		c.Set("certState", certState)
 		c.Set("identity", identity)
 		c.Set("uvmInfo", uvmInfo)
+		c.Next()
+	}
+}
+
+func convertStatusCode(status uint) int {
+	switch status {
+	case endpointcontroller.StatusOK:
+		return http.StatusOK
+	case endpointcontroller.StatusInvalidInput:
+		return http.StatusBadRequest
+	case endpointcontroller.StatusForbidden:
+		return http.StatusForbidden
+	default:
+		panic("Unrecognized status")
+	}
+}
+
+func RegisterEndpointController(controllers *endpointcontroller.EndpointController) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set("endpointController", controllers)
 		c.Next()
 	}
 }
